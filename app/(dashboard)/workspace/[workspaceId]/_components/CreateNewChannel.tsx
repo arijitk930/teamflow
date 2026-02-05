@@ -1,6 +1,10 @@
 "use client";
 
-import { ChannelNameSchema, transformChannelName } from "@/app/schemas/channel";
+import {
+  ChannelNameSchema,
+  ChannelSchemaNameType,
+  transformChannelName,
+} from "@/app/schemas/channel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,13 +23,18 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { orpc } from "@/lib/orpc";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { isDefinedError } from "@orpc/client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 function CreateNewChannel() {
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const form = useForm({
     resolver: zodResolver(ChannelNameSchema),
@@ -33,6 +42,34 @@ function CreateNewChannel() {
       name: "",
     },
   });
+
+  const createChannelMutation = useMutation(
+    orpc.channel.create.mutationOptions({
+      onSuccess: (newChannel) => {
+        toast.success(`Channel ${newChannel.name} created successfully!`);
+
+        queryClient.invalidateQueries({
+          queryKey: orpc.channel.list.queryKey(),
+        });
+
+        form.reset();
+        setOpen(false);
+      },
+
+      onError: (error) => {
+        if (isDefinedError(error)) {
+          toast.error(error.message);
+          return;
+        }
+
+        toast.error("Failed to create channel. Please try again!");
+      },
+    }),
+  );
+
+  function onSubmit(values: ChannelSchemaNameType) {
+    createChannelMutation.mutate(values);
+  }
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const watchedName = form.watch("name");
@@ -55,7 +92,7 @@ function CreateNewChannel() {
         </DialogHeader>
 
         <Form {...form}>
-          <form className="space-y-4">
+          <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
             <FormField
               control={form.control}
               name="name"
@@ -78,7 +115,11 @@ function CreateNewChannel() {
               )}
             />
 
-            <Button type="submit">Create New Channel</Button>
+            <Button disabled={createChannelMutation.isPending} type="submit">
+              {createChannelMutation.isPending
+                ? "Creating..."
+                : " Create New Channel"}
+            </Button>
           </form>
         </Form>
       </DialogContent>
